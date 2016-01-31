@@ -1,0 +1,7 @@
+build:
+  image: "coderstephen/rust:1.6"
+  command: sh build.sh
+  volumes:
+    - .:/code
+  working_dir: /code
+
