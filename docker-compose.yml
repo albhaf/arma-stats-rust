@@ -1,5 +1,5 @@
 build:
-  image: "coderstephen/rust:1.6"
+  image: "coderstephen/rust:nightly"
   command: sh build.sh
   volumes:
     - .:/code
