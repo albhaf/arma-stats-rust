@@ -7,7 +7,7 @@ use libc::strncpy;
 #[cfg(target_os = "windows")]
 #[allow(non_snake_case)]
 #[no_mangle]
-#[export_name="_RVExtension@12"]
+#[export_name="_RVExtension"]
 pub extern "stdcall" fn RVExtension(output: *mut c_char,
                                     output_size: c_int,
                                     function: *const c_char) {
