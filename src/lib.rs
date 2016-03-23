@@ -1,6 +1,7 @@
-#![feature(const_fn)]
-
 extern crate libc;
+
+#[macro_use]
+extern crate lazy_static;
 
 mod organizer;
 
@@ -9,10 +10,13 @@ use libc::c_int;
 use libc::strncpy;
 use std::ffi::CStr;
 use std::str;
+use std::sync::Mutex;
 
 use organizer::Organizer;
 
-static ORGANIZER: Organizer = Organizer::new();
+lazy_static! {
+    static ref ORGANIZER: Mutex<Organizer> = Mutex::new(Organizer::new());
+}
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -32,7 +36,8 @@ pub extern "system" fn RVExtension(output: *mut c_char,
     let function_name = input[0];
     let function_data = input[1];
 
-    match ORGANIZER.call(function_name, function_data) {
+    // TODO: make prettier and perhaps some error handling
+    match ORGANIZER.lock().unwrap().call(function_name, function_data) {
         Some(ret) => unsafe {
             strncpy(output, ret.as_ptr() as *const c_char, ret.len() as usize);
         },
