@@ -1,4 +1,7 @@
 extern crate libc;
+extern crate hyper;
+extern crate serde_json;
+extern crate time;
 
 #[macro_use]
 extern crate lazy_static;
