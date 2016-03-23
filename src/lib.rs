@@ -22,11 +22,15 @@ pub extern "system" fn RVExtension(output: *mut c_char,
     let input: Vec<&str> = r_str.split(";").collect();
 
     let function_name = input[0];
+    let function_data = input[1];
+
+    let ret: &str = match function_name {
+        "echo" => function_data,
+        _ => return,
+    };
 
     unsafe {
-        strncpy(output,
-                function_name.as_ptr() as *const c_char,
-                function_name.len() as usize);
+        strncpy(output, ret.as_ptr() as *const c_char, ret.len() as usize);
     }
 }
 
@@ -38,13 +42,13 @@ mod tests {
 
     #[test]
     fn function_echo() {
-        let function = CString::new("foo;bar").unwrap();
+        let function = CString::new("echo;foobar").unwrap();
         let out = CString::new("").unwrap().into_raw();
         RVExtension(out,
                     4096, // game currently calls method with this value
                     function.as_ptr());
 
         let result = unsafe { CString::from_raw(out) };
-        assert_eq!("foo", result.into_string().unwrap())
+        assert_eq!("foobar", result.into_string().unwrap())
     }
 }
