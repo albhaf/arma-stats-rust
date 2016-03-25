@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Albert Hafvenström <albhaf@gmail.com>"]
 
 [lib]
-crate-type = ["dylib"]
+crate-type = ["dylib", "rlib"]
 
 [dependencies]
 libc = "0.2.6"
