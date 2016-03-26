@@ -1,3 +1,4 @@
+use std::io;
 use std::io::Read;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
@@ -6,6 +7,7 @@ use std::thread;
 use std::thread::JoinHandle;
 
 use hyper::Client;
+use hyper::client::Response;
 use serde_json;
 use serde_json::Value;
 use time;
@@ -14,9 +16,8 @@ pub struct Organizer {
     settings: Arc<Settings>,
 
     client: Arc<Client>,
-    sender: Sender<String>,
+    sender: Option<Sender<String>>,
 
-    // TODO: to be used in case we need to make sure it has finished processing events in tests
     _worker: JoinHandle<()>,
 }
 
@@ -24,6 +25,7 @@ struct Settings {
     hostname: RwLock<Option<String>>,
     mission_id: RwLock<i64>,
 }
+
 
 impl Organizer {
     pub fn new() -> Organizer {
@@ -38,7 +40,6 @@ impl Organizer {
         let worker = {
             let client = http.clone();
             let settings = settings.clone();
-            let tx = tx.clone();
             thread::spawn(move || {
                 for data in rx {
                     let path = {
@@ -52,12 +53,10 @@ impl Organizer {
                         }
                     };
 
-                    match client.post(&path)
-                                .body(&data)
-                                .send() {
+                    match Organizer::send_event(&client, &path, &data) {
                         Ok(_) => (),
-                        Err(_) => tx.send(data).unwrap(), //TODO: do anything besides retry?
-                    }
+                        Err(e) => println!("{}", e),
+                    };
                 }
             })
         };
@@ -65,7 +64,7 @@ impl Organizer {
         Organizer {
             settings: settings.clone(),
             client: http.clone(),
-            sender: tx,
+            sender: Some(tx),
             _worker: worker,
         }
     }
@@ -152,9 +151,28 @@ impl Organizer {
             Err(_) => return Some("ERROR"),
         };
 
-        // Always succesful
-        self.sender.send(body).unwrap();
+        match self.sender {
+            Some(ref s) => s.send(body).unwrap(),
+            None => (),
+        };
         Some("OK")
+    }
+
+    fn send_event(client: &Client, path: &str, data: &str) -> ::hyper::error::Result<Response> {
+        match client.post(path)
+                    .body(data)
+                    .send() {
+            Ok(val) => Ok(val),
+            Err(::hyper::error::Error::Io(e)) => {
+                // Retry in case of stale connection
+                if e.kind() == io::ErrorKind::ConnectionAborted {
+                    client.post(path).body(data).send()
+                } else {
+                    Err(::hyper::error::Error::Io(e))
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -164,6 +182,9 @@ mod tests {
     extern crate router;
 
     use super::*;
+
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use self::iron::prelude::*;
     use self::iron::status;
@@ -197,4 +218,35 @@ mod tests {
         server.close().unwrap();
     }
 
+    #[test]
+    fn events() {
+        let mut router = Router::new();
+
+        let event_counter = Arc::new(AtomicUsize::new(0));
+
+        {
+            let event_counter = event_counter.clone();
+            router.post("/missions",
+                        |_r: &mut Request| Ok(Response::with((status::Ok, r#"{"id": 1}"#))));
+            router.post("/missions/1/events", move |_r: &mut Request| {
+                event_counter.fetch_add(1, Ordering::Relaxed);
+                Ok(Response::with((status::Ok, "ok")))
+            });
+        }
+
+        let mut server = Iron::new(router).http("127.0.0.1:0").unwrap();
+
+        let mut o = Organizer::new();
+        o.call("setup",
+               &("http://".to_string() + &(server.socket.to_string())));
+        o.call("mission", r#"{"type": "empty"}"#);
+        o.call("event", r#"{"foo": "bar"}"#);
+        o.call("event", r#"{"foo": "bar"}"#);
+
+        o.sender = None;
+        o._worker.join().unwrap();
+        server.close().unwrap();
+
+        assert_eq!(2, event_counter.load(Ordering::Relaxed));
+    }
 }
