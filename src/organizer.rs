@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::RwLock;
 use std::thread;
+use std::thread::JoinHandle;
 
 use hyper::Client;
 use serde_json;
@@ -14,6 +15,9 @@ pub struct Organizer {
 
     client: Arc<Client>,
     sender: Sender<String>,
+
+    // TODO: to be used in case we need to make sure it has finished processing events in tests
+    _worker: JoinHandle<()>,
 }
 
 struct Settings {
@@ -31,14 +35,12 @@ impl Organizer {
             mission_id: RwLock::new(0),
         });
 
-        {
+        let worker = {
             let client = http.clone();
             let settings = settings.clone();
             let tx = tx.clone();
             thread::spawn(move || {
-                loop {
-                    let data = rx.recv().unwrap();
-
+                for data in rx {
                     let path = {
                         let hostname = settings.hostname.read().unwrap();
                         let mission = settings.mission_id.read().unwrap();
@@ -56,15 +58,15 @@ impl Organizer {
                         Ok(_) => (),
                         Err(_) => tx.send(data).unwrap(), //TODO: do anything besides retry?
                     }
-
                 }
-            });
-        }
+            })
+        };
 
         Organizer {
             settings: settings.clone(),
             client: http.clone(),
-            sender: tx.clone(),
+            sender: tx,
+            _worker: worker,
         }
     }
 
@@ -94,11 +96,10 @@ impl Organizer {
             _ => (),
         };
 
-
         let path = {
             let guard = self.settings.hostname.read().unwrap();
             match *guard {
-                Some(ref s) => format!("{}/mission", s.to_string()),
+                Some(ref s) => format!("{}/missions", s.to_string()),
                 None => return Some("-1"),
             }
         };
@@ -117,7 +118,7 @@ impl Organizer {
         };
 
         let mission_id: i64 = match mission.lookup("id") {
-            Some(&Value::I64(id)) => id,
+            Some(&Value::U64(id)) => id as i64,
             Some(&Value::String(ref id)) => {
                 match id.parse::<i64>() {
                     Ok(n) => n,
@@ -155,4 +156,52 @@ impl Organizer {
         self.sender.send(body).unwrap();
         Some("OK")
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use hyper;
+    use hyper::server::{Server, Request, Response};
+
+    #[test]
+    fn setup() {
+        let mut o = Organizer::new();
+        let host = "http://localhost:8080";
+        o.call("setup", host);
+        assert_eq!(host,
+                   *(o.settings.hostname.read().unwrap()).as_ref().unwrap());
+    }
+
+    #[test]
+    fn mission() {
+        let mut server = Server::http("127.0.0.1:0")
+                             .unwrap()
+                             .handle(move |req: Request, res: Response| {
+                                 let path = match req.uri {
+                                     hyper::uri::RequestUri::AbsolutePath(ref s) => &s,
+                                     _ => "",
+                                 };
+                                 match (req.method, path) {
+                                     (hyper::Post, "/missions") => {
+                                         res.send(r#"{"id": 1}"#.as_bytes()).unwrap();
+                                     }
+                                     _ => (),
+                                 }
+                             })
+                             .unwrap();
+
+
+        let mut o = Organizer::new();
+        o.call("setup",
+               &("http://".to_string() + &(server.socket.to_string())));
+        let res = o.call("mission", r#"{"type": "empty"}"#).unwrap();
+
+        assert_eq!("OK", res);
+        assert_eq!(1, *(o.settings.mission_id.read().unwrap()));
+
+        server.close().unwrap();
+    }
+
 }
