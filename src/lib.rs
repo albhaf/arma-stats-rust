@@ -32,15 +32,13 @@ pub extern "system" fn RVExtension(output: *mut c_char,
         CStr::from_ptr(function)
     };
 
-    let r_str = str::from_utf8(c_str.to_bytes()).unwrap();
+    let input: Vec<&str> = match str::from_utf8(c_str.to_bytes()) {
+        Ok(s) => s.split(";").collect(),
+        _ => return,
+    };
 
-    let input: Vec<&str> = r_str.split(";").collect();
-
-    let function_name = input[0];
-    let function_data = input[1];
-
-    // TODO: make prettier and perhaps some error handling
-    match ORGANIZER.lock().unwrap().call(function_name, function_data) {
+    // TODO: try to catch panics here
+    match ORGANIZER.lock().unwrap().call(input[0], input[1]) {
         Some(ret) => unsafe {
             strncpy(output, ret.as_ptr() as *const c_char, ret.len() as usize);
         },
