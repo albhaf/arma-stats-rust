@@ -12,3 +12,7 @@ lazy_static = "0.1.15"
 serde_json = "0.7.0"
 hyper = "0.8.0"
 time = "0.1"
+
+[dev-dependencies]
+iron = "0.3.0"
+router = "0.1.1"

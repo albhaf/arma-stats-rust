@@ -160,10 +160,14 @@ impl Organizer {
 
 #[cfg(test)]
 mod tests {
+    extern crate iron;
+    extern crate router;
+
     use super::*;
 
-    use hyper;
-    use hyper::server::{Server, Request, Response};
+    use self::iron::prelude::*;
+    use self::iron::status;
+    use self::router::Router;
 
     #[test]
     fn setup() {
@@ -176,22 +180,11 @@ mod tests {
 
     #[test]
     fn mission() {
-        let mut server = Server::http("127.0.0.1:0")
-                             .unwrap()
-                             .handle(move |req: Request, res: Response| {
-                                 let path = match req.uri {
-                                     hyper::uri::RequestUri::AbsolutePath(ref s) => &s,
-                                     _ => "",
-                                 };
-                                 match (req.method, path) {
-                                     (hyper::Post, "/missions") => {
-                                         res.send(r#"{"id": 1}"#.as_bytes()).unwrap();
-                                     }
-                                     _ => (),
-                                 }
-                             })
-                             .unwrap();
+        let mut router = Router::new();
+        router.post("/missions",
+                    |_r: &mut Request| Ok(Response::with((status::Ok, r#"{"id": 1}"#))));
 
+        let mut server = Iron::new(router).http("127.0.0.1:0").unwrap();
 
         let mut o = Organizer::new();
         o.call("setup",
