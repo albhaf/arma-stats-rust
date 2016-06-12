@@ -75,8 +75,14 @@ impl Organizer {
             "echo" => self.echo(data),
             "mission" => self.mission(data),
             "event" => self.event(data),
+            "panic" => self.panic(),
             _ => None,
         }
+    }
+
+    // Function only intended for testing panic handling and recovery
+    fn panic(&self) -> Option<&'static str> {
+        panic!("foobar");
     }
 
     fn setup(&mut self, data: &str) -> Option<&'static str> {

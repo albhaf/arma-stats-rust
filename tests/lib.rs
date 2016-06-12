@@ -13,3 +13,10 @@ fn function_echo() {
     let result = unsafe { CString::from_raw(out) };
     assert_eq!("foobar", result.into_string().unwrap())
 }
+
+#[test]
+fn function_panic() {
+    let function = CString::new("panic;").unwrap();
+    let out = CString::new("").unwrap().into_raw();
+    arma_stats::RVExtension(out, 4096, function.as_ptr());
+}

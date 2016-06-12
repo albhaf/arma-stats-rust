@@ -12,6 +12,7 @@ use libc::c_char;
 use libc::c_int;
 use libc::strncpy;
 use std::ffi::CStr;
+use std::panic;
 use std::str;
 use std::sync::Mutex;
 
@@ -37,11 +38,16 @@ pub extern "system" fn RVExtension(output: *mut c_char,
         _ => return,
     };
 
-    // TODO: try to catch panics here
-    match ORGANIZER.lock().unwrap().call(input[0], input[1]) {
-        Some(ret) => unsafe {
-            strncpy(output, ret.as_ptr() as *const c_char, ret.len() as usize);
-        },
-        None => (),
+    let ret = match panic::catch_unwind(|| ORGANIZER.lock().unwrap().call(input[0], input[1])) {
+        Ok(Some(s)) => s,
+        Ok(None) => return,
+        Err(_) => {
+            // TODO: log error
+            return;
+        }
+    };
+
+    unsafe {
+        strncpy(output, ret.as_ptr() as *const c_char, ret.len() as usize);
     }
 }
