@@ -1,6 +1,6 @@
 build:
-  image: "coderstephen/rust:nightly"
-  command: sh build.sh
+  image: "albhaf/rust"
+  command: sh -l build.sh
   volumes:
     - .:/code
   working_dir: /code
