@@ -73,8 +73,8 @@ impl Organizer {
         match function {
             "setup" => self.setup(data),
             "echo" => self.echo(data),
-            "mission" => self.mission(data),
-            "event" => self.event(data),
+            "mission" => Some(self.mission(data).unwrap_or_else(|e| e)),
+            "event" => Some(self.event(data).unwrap_or_else(|e| e)),
             "panic" => self.panic(),
             _ => None,
         }
@@ -95,73 +95,49 @@ impl Organizer {
         Some(data)
     }
 
-    fn mission<'a>(&mut self, data: &'a str) -> Option<&'a str> {
-        match serde_json::from_str::<Value>(data) {
-            Err(_) => return Some("-1"),
-            _ => (),
-        };
+    fn mission<'a>(&mut self, data: &'a str) -> Result<&'a str, &'a str> {
+        try!(serde_json::from_str::<Value>(data).map_err(|_| "-1"));
 
         let path = {
             let guard = self.settings.hostname.read().unwrap();
-            match *guard {
-                Some(ref s) => format!("{}/missions", s.to_string()),
-                None => return Some("-1"),
-            }
+            let hostname = try!(guard.as_ref().ok_or("-1")).to_string();
+            format!("{}/missions", hostname.to_string())
         };
-        let mut res = self.client
-                          .post(&path)
-                          .body(data)
-                          .send()
-                          .unwrap(); //TODO: handle error
+
+        let mut res = try!(self.client
+                               .post(&path)
+                               .body(data)
+                               .send()
+                               .map_err(|_| "-1"));
 
         let mut body = String::new();
-        res.read_to_string(&mut body).unwrap(); //TODO: error
+        try!(res.read_to_string(&mut body).map_err(|_| "-1"));
 
-        let mission: Value = match serde_json::from_str(&body) {
-            Ok(v) => v,
-            Err(_) => return Some("-1"),
-        };
+        let mission: Value = try!(serde_json::from_str(&body).map_err(|_| "-1"));
 
         let mission_id: i64 = match mission.lookup("id") {
             Some(&Value::U64(id)) => id as i64,
-            Some(&Value::String(ref id)) => {
-                match id.parse::<i64>() {
-                    Ok(n) => n,
-                    Err(_) => return Some("-1"),
-                }
-            }
-            _ => return Some("-1"),
+            Some(&Value::String(ref id)) => try!(id.parse::<i64>().map_err(|_| "-1")),
+            _ => return Err("-1"),
         };
 
         let mut guard = self.settings.mission_id.write().unwrap();
         *guard = mission_id;
-        Some("OK")
+        Ok("OK")
     }
 
-    fn event<'a>(&self, data: &'a str) -> Option<&'a str> {
-        let event = match serde_json::from_str::<Value>(data) {
-            Ok(mut v) => {
-                match v.as_object_mut() {
-                    Some(e) => {
-                        e.insert("timestamp".to_string(),
-                                 Value::String(time::now().rfc3339().to_string()));
-                    }
-                    None => return Some("ERROR"),
-                }
+    fn event<'a>(&self, data: &'a str) -> Result<&'a str, &'a str> {
+        match serde_json::from_str::<Value>(data) {
+            Ok(Value::Object(mut event)) => {
+                event.insert("timestamp".to_string(),
+                             Value::String(time::now().rfc3339().to_string()));
+
+                let body = try!(serde_json::to_string(&event).map_err(|_| "ERROR"));
+                try!(self.sender.as_ref().ok_or("ERROR")).send(body).unwrap();
+                Ok("OK")
             }
-            Err(_) => return Some("ERROR"),
-        };
-
-        let body = match serde_json::to_string(&event) {
-            Ok(v) => v,
-            Err(_) => return Some("ERROR"),
-        };
-
-        match self.sender {
-            Some(ref s) => s.send(body).unwrap(),
-            None => (),
-        };
-        Some("OK")
+            _ => Err("ERROR"),
+        }
     }
 
     fn send_event(client: &Client, path: &str, data: &str) -> ::hyper::error::Result<Response> {
