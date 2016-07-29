@@ -26,28 +26,42 @@ lazy_static! {
 #[no_mangle]
 #[export_name="_RVExtension"]
 pub extern "system" fn RVExtension(output: *mut c_char,
-                                   _output_size: c_int,
+                                   output_size: c_int,
                                    function: *const c_char) {
     let c_str = unsafe {
         assert!(!function.is_null());
         CStr::from_ptr(function)
     };
 
-    let input: Vec<&str> = match str::from_utf8(c_str.to_bytes()) {
+    let input: Vec<&str> = match c_str.to_str() {
         Ok(s) => s.split(";").collect(),
         _ => return,
     };
 
-    let ret = match panic::catch_unwind(|| ORGANIZER.lock().unwrap().call(input[0], input[1])) {
-        Ok(Some(s)) => s,
-        Ok(None) => return,
-        Err(_) => {
-            // TODO: log error
-            return;
+    match panic::catch_unwind(|| {
+        // Ignore poisoned mutex for now, hopefully it's not something too bad
+        let mut guard = match ORGANIZER.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.call(input[0], input[1])
+    }) {
+        Ok(Some(ret)) => unsafe {
+            strncpy(output, ret.as_ptr() as *const c_char, output_size as usize);
+        },
+        Ok(None) => (),
+        Err(e) => {
+            let err: &std::fmt::Debug = match e.downcast_ref::<String>() {
+                Some(as_string) => as_string,
+                None => {
+                    match e.downcast_ref::<&str>() {
+                        Some(as_string) => as_string,
+                        None => &e,
+                    }
+                }
+            };
+
+            println!("error: {:?}", err);
         }
     };
-
-    unsafe {
-        strncpy(output, ret.as_ptr() as *const c_char, ret.len() as usize);
-    }
 }
