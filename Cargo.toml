@@ -7,12 +7,12 @@ authors = ["Albert Hafvenström <albhaf@gmail.com>"]
 crate-type = ["dylib", "rlib"]
 
 [dependencies]
-libc = "0.2.6"
-lazy_static = "0.1.15"
-serde_json = "0.7.0"
-hyper = "0.8.0"
-time = "0.1"
+libc = "0.2.14"
+lazy_static = "0.2.1"
+serde_json = "0.8.0"
+hyper = "0.9.10"
+time = "0.1.35"
 
 [dev-dependencies]
-iron = "0.3.0"
-router = "0.1.1"
+iron = "0.4.0"
+router = "0.2.0"
