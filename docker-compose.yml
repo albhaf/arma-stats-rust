@@ -1,7 +1,10 @@
 build:
-  image: "albhaf/rust"
+  image: "albhaf/docker-rust-cross"
   command: sh -l build.sh
+  environment:
+    CARGO_HOME: /cargo
   volumes:
     - .:/code
+    - ${HOME}/.cargo:/cargo
   working_dir: /code
 
