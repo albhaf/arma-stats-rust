@@ -51,13 +51,13 @@ pub extern "system" fn RVExtension(output: *mut c_char,
         },
         Ok(None) => (),
         Err(e) => {
-            let err: &std::fmt::Debug = match e.downcast_ref::<String>() {
-                Some(as_string) => as_string,
-                None => {
-                    match e.downcast_ref::<&str>() {
-                        Some(as_string) => as_string,
-                        None => &e,
-                    }
+            let err: &std::fmt::Debug = {
+                if let Some(e) = e.downcast_ref::<String>() {
+                    e
+                } else if let Some(e) = e.downcast_ref::<&str>() {
+                    e
+                } else {
+                    &e
                 }
             };
 
