@@ -33,32 +33,30 @@ impl Organizer {
 
         let http = Arc::new(Client::new());
         let settings = Arc::new(Settings {
-            hostname: RwLock::new(None),
-            mission_id: RwLock::new(0),
-        });
+                                    hostname: RwLock::new(None),
+                                    mission_id: RwLock::new(0),
+                                });
 
         let worker = {
             let client = http.clone();
             let settings = settings.clone();
-            thread::spawn(move || {
-                for data in rx {
-                    let path = {
-                        let hostname = settings.hostname.read().unwrap();
-                        let mission = settings.mission_id.read().unwrap();
-                        match *hostname {
-                            Some(ref s) => {
-                                format!("{}/missions/{}/events", s.to_string(), *mission)
-                            }
-                            None => continue,
-                        }
-                    };
+            thread::spawn(move || for data in rx {
+                              let path = {
+                                  let hostname = settings.hostname.read().unwrap();
+                                  let mission = settings.mission_id.read().unwrap();
+                                  match *hostname {
+                                      Some(ref s) => {
+                                          format!("{}/missions/{}/events", s.to_string(), *mission)
+                                      }
+                                      None => continue,
+                                  }
+                              };
 
-                    match Organizer::send_event(&client, &path, &data) {
-                        Ok(_) => (),
-                        Err(e) => println!("{}", e),
-                    };
-                }
-            })
+                              match Organizer::send_event(&client, &path, &data) {
+                                  Ok(_) => (),
+                                  Err(e) => println!("{}", e),
+                              };
+                          })
         };
 
         Organizer {
@@ -104,11 +102,7 @@ impl Organizer {
             format!("{}/missions", hostname.to_string())
         };
 
-        let mut res = try!(self.client
-                               .post(&path)
-                               .body(data)
-                               .send()
-                               .map_err(|_| "-1"));
+        let mut res = try!(self.client.post(&path).body(data).send().map_err(|_| "-1"));
 
         let mut body = String::new();
         try!(res.read_to_string(&mut body).map_err(|_| "-1"));
@@ -133,7 +127,9 @@ impl Organizer {
                              Value::String(time::now().rfc3339().to_string()));
 
                 let body = try!(serde_json::to_string(&event).map_err(|_| "ERROR"));
-                try!(self.sender.as_ref().ok_or("ERROR")).send(body).unwrap();
+                try!(self.sender.as_ref().ok_or("ERROR"))
+                    .send(body)
+                    .unwrap();
                 Ok("OK")
             }
             _ => Err("ERROR"),
@@ -141,9 +137,7 @@ impl Organizer {
     }
 
     fn send_event(client: &Client, path: &str, data: &str) -> ::hyper::error::Result<Response> {
-        match client.post(path)
-                    .body(data)
-                    .send() {
+        match client.post(path).body(data).send() {
             Ok(val) => Ok(val),
             Err(::hyper::error::Error::Io(e)) => {
                 // Retry in case of stale connection

@@ -39,13 +39,13 @@ pub extern "system" fn RVExtension(output: *mut c_char,
     };
 
     match panic::catch_unwind(|| {
-        // Ignore poisoned mutex for now, hopefully it's not something too bad
-        let mut guard = match ORGANIZER.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        guard.call(input[0], input[1])
-    }) {
+                                  // Ignore poisoned mutex for now, hopefully it's not something too bad
+                                  let mut guard = match ORGANIZER.lock() {
+                                      Ok(guard) => guard,
+                                      Err(poisoned) => poisoned.into_inner(),
+                                  };
+                                  guard.call(input[0], input[1])
+                              }) {
         Ok(Some(ret)) => unsafe {
             strncpy(output, ret.as_ptr() as *const c_char, output_size as usize);
         },
