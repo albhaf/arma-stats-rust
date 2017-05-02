@@ -2,7 +2,6 @@ use std::io;
 use std::io::Read;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
-use std::sync::RwLock;
 use std::thread;
 use std::thread::JoinHandle;
 
@@ -13,45 +12,24 @@ use serde_json::Value;
 use time;
 
 pub struct Organizer {
-    settings: Arc<Settings>,
+    hostname: Option<String>,
+    mission_id: i64,
 
     client: Arc<Client>,
-    sender: Option<Sender<String>>,
+    sender: Option<Sender<(String, String)>>,
 
     _worker: JoinHandle<()>,
 }
 
-struct Settings {
-    hostname: RwLock<Option<String>>,
-    mission_id: RwLock<i64>,
-}
-
-
 impl Organizer {
     pub fn new() -> Organizer {
-        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+        let (tx, rx): (Sender<(String, String)>, Receiver<(String, String)>) = channel();
 
         let http = Arc::new(Client::new());
-        let settings = Arc::new(Settings {
-                                    hostname: RwLock::new(None),
-                                    mission_id: RwLock::new(0),
-                                });
 
         let worker = {
             let client = http.clone();
-            let settings = settings.clone();
-            thread::spawn(move || for data in rx {
-                              let path = {
-                                  let hostname = settings.hostname.read().unwrap();
-                                  let mission = settings.mission_id.read().unwrap();
-                                  match *hostname {
-                                      Some(ref s) => {
-                                          format!("{}/missions/{}/events", s.to_string(), *mission)
-                                      }
-                                      None => continue,
-                                  }
-                              };
-
+            thread::spawn(move || for (path, data) in rx {
                               match Organizer::send_event(&client, &path, &data) {
                                   Ok(_) => (),
                                   Err(e) => println!("{}", e),
@@ -60,7 +38,8 @@ impl Organizer {
         };
 
         Organizer {
-            settings: settings.clone(),
+            hostname: None,
+            mission_id: 0,
             client: http.clone(),
             sender: Some(tx),
             _worker: worker,
@@ -84,8 +63,7 @@ impl Organizer {
     }
 
     fn setup(&mut self, data: &str) -> Option<&'static str> {
-        let mut guard = self.settings.hostname.write().unwrap();
-        *guard = Some(data.to_string());
+        self.hostname = Some(data.to_string());
         None
     }
 
@@ -96,10 +74,9 @@ impl Organizer {
     fn mission<'a>(&mut self, data: &'a str) -> Result<&'a str, &'a str> {
         try!(serde_json::from_str::<Value>(data).map_err(|_| "-1"));
 
-        let path = {
-            let guard = self.settings.hostname.read().unwrap();
-            let hostname = try!(guard.as_ref().ok_or("-1")).to_string();
-            format!("{}/missions", hostname.to_string())
+        let path = match self.hostname {
+            Some(ref s) => format!("{}/missions", s),
+            None => return Err("-1"),
         };
 
         let mut res = try!(self.client.post(&path).body(data).send().map_err(|_| "-1"));
@@ -115,8 +92,7 @@ impl Organizer {
             _ => return Err("-1"),
         };
 
-        let mut guard = self.settings.mission_id.write().unwrap();
-        *guard = mission_id;
+        self.mission_id = mission_id;
         Ok("OK")
     }
 
@@ -125,10 +101,15 @@ impl Organizer {
             Ok(Value::Object(mut event)) => {
                 event.insert("timestamp".to_string(),
                              Value::String(time::now().rfc3339().to_string()));
-
+                let path = {
+                    match self.hostname {
+                        Some(ref s) => format!("{}/missions/{}/events", s, self.mission_id),
+                        None => return Err("ERROR"),
+                    }
+                };
                 let body = try!(serde_json::to_string(&event).map_err(|_| "ERROR"));
                 try!(self.sender.as_ref().ok_or("ERROR"))
-                    .send(body)
+                    .send((path, body))
                     .unwrap();
                 Ok("OK")
             }
@@ -171,8 +152,7 @@ mod tests {
         let mut o = Organizer::new();
         let host = "http://localhost:8080";
         o.call("setup", host);
-        assert_eq!(host,
-                   *(o.settings.hostname.read().unwrap()).as_ref().unwrap());
+        assert_eq!(host, o.hostname.unwrap());
     }
 
     #[test]
@@ -189,7 +169,7 @@ mod tests {
         let res = o.call("mission", r#"{"type": "empty"}"#).unwrap();
 
         assert_eq!("OK", res);
-        assert_eq!(1, *(o.settings.mission_id.read().unwrap()));
+        assert_eq!(1, o.mission_id);
 
         server.close().unwrap();
     }
