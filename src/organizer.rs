@@ -24,25 +24,19 @@ pub struct Organizer {
 impl Organizer {
     pub fn new() -> Organizer {
         let (tx, rx): (Sender<(String, String)>, Receiver<(String, String)>) = channel();
-
         let http = Arc::new(Client::new());
-
-        let worker = {
-            let client = http.clone();
-            thread::spawn(move || for (path, data) in rx {
-                              match Organizer::send_event(&client, &path, &data) {
-                                  Ok(_) => (),
-                                  Err(e) => println!("{}", e),
-                              };
-                          })
-        };
 
         Organizer {
             hostname: None,
             mission_id: 0,
             client: http.clone(),
             sender: Some(tx),
-            _worker: worker,
+            _worker: thread::spawn(move || for (path, data) in rx {
+                                       match Organizer::send_event(&http, &path, &data) {
+                                           Ok(_) => (),
+                                           Err(e) => println!("{}", e),
+                                       };
+                                   }),
         }
     }
 
