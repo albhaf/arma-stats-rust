@@ -138,7 +138,7 @@ mod tests {
     extern crate iron;
     extern crate router;
 
-    use super::*;
+    use super::Organizer;
 
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
