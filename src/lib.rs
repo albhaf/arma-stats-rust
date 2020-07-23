@@ -1,7 +1,7 @@
+extern crate chrono;
 extern crate libc;
-extern crate hyper;
+extern crate reqwest;
 extern crate serde_json;
-extern crate time;
 
 #[macro_use]
 extern crate lazy_static;
@@ -24,10 +24,12 @@ lazy_static! {
 
 #[allow(non_snake_case)]
 #[no_mangle]
-#[export_name="_RVExtension"]
-pub extern "system" fn RVExtension(output: *mut c_char,
-                                   output_size: c_int,
-                                   function: *const c_char) {
+#[export_name = "_RVExtension"]
+pub extern "system" fn RVExtension(
+    output: *mut c_char,
+    output_size: c_int,
+    function: *const c_char,
+) {
     let c_str = unsafe {
         assert!(!function.is_null());
         CStr::from_ptr(function)
@@ -44,14 +46,14 @@ pub extern "system" fn RVExtension(output: *mut c_char,
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        guard.call(input[0], input[1])
+        guard.call(input[0], input[1].to_string())
     }) {
         Ok(Some(ret)) => unsafe {
             strncpy(output, ret.as_ptr() as *const c_char, output_size as usize);
         },
         Ok(None) => (),
         Err(e) => {
-            let err: &std::fmt::Debug = {
+            let err: &dyn std::fmt::Debug = {
                 if let Some(e) = e.downcast_ref::<String>() {
                     e
                 } else if let Some(e) = e.downcast_ref::<&str>() {
